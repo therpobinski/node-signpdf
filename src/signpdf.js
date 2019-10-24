@@ -1,6 +1,7 @@
 import forge from 'node-forge';
 import SignPdfError from './SignPdfError';
 import {removeTrailingNewLine} from './helpers';
+const graphene = require('graphene-pk11');
 
 export {default as SignPdfError} from './SignPdfError';
 
@@ -11,6 +12,57 @@ export class SignPdf {
         this.byteRangePlaceholder = DEFAULT_BYTE_RANGE_PLACEHOLDER;
         this.lastSignature = null;
     }
+
+
+    signPkcs11(pdfBuffer) {
+        if (!(pdfBuffer instanceof Buffer)) {
+            throw new SignPdfError(
+                'PDF expected as Buffer.',
+                SignPdfError.TYPE_INPUT,
+            );
+        }
+
+        let { pdf, placeholderLength, byteRange } = this.getSignablePdfBuffer(pdfBuffer);
+
+        let Module = graphene.Module;
+        let module = Module.load('/lib64/libASEP11.so', "TEST TOKEN");
+
+        module.initialize();
+        let session = module.getSlots(0).open();
+        session.login('1234');
+
+
+        let buf = session.find({ class: graphene.ObjectClass.PRIVATE_KEY }).items_[1]
+        let key = session.getObject(buf);
+        let sign = session.createSign("SHA1_RSA_PKCS", key);
+        sign.update(pdf);
+        let signatureBuf = sign.final();
+        //console.log("Signature RSA-SHA1:", signature.toString("hex"));
+
+        session.logout();
+        module.finalize();
+
+        let signature = signatureBuf.toString('hex');
+        //let signature = Buffer.from(raw, 'binary').toString('hex');
+        // Store the HEXified signature. At least useful in tests.
+        this.lastSignature = signature;
+
+        // Pad the signature with zeroes so the it is the same length as the placeholder
+        signature += Buffer
+            .from(String.fromCharCode(0).repeat((placeholderLength / 2) - signatureBuf.length))
+            .toString('hex');
+
+        // Place it in the document.
+        pdf = Buffer.concat([
+            pdf.slice(0, byteRange[1]),
+            Buffer.from(`<${signature}>`),
+            pdf.slice(byteRange[1]),
+        ]);
+
+        // Magic. Done.
+        return pdf;
+    }
+
 
     sign(
         pdfBuffer,
@@ -36,50 +88,7 @@ export class SignPdf {
             );
         }
 
-        let pdf = removeTrailingNewLine(pdfBuffer);
-
-        // Find the ByteRange placeholder.
-        const byteRangePlaceholder = [
-            0,
-            `/${this.byteRangePlaceholder}`,
-            `/${this.byteRangePlaceholder}`,
-            `/${this.byteRangePlaceholder}`,
-        ];
-        const byteRangeString = `/ByteRange [${byteRangePlaceholder.join(' ')}]`;
-        const byteRangePos = pdf.indexOf(byteRangeString);
-        if (byteRangePos === -1) {
-            throw new SignPdfError(
-                `Could not find ByteRange placeholder: ${byteRangeString}`,
-                SignPdfError.TYPE_PARSE,
-            );
-        }
-
-        // Calculate the actual ByteRange that needs to replace the placeholder.
-        const byteRangeEnd = byteRangePos + byteRangeString.length;
-        const contentsTagPos = pdf.indexOf('/Contents ', byteRangeEnd);
-        const placeholderPos = pdf.indexOf('<', contentsTagPos);
-        const placeholderEnd = pdf.indexOf('>', placeholderPos);
-        const placeholderLengthWithBrackets = (placeholderEnd + 1) - placeholderPos;
-        const placeholderLength = placeholderLengthWithBrackets - 2;
-        const byteRange = [0, 0, 0, 0];
-        byteRange[1] = placeholderPos;
-        byteRange[2] = byteRange[1] + placeholderLengthWithBrackets;
-        byteRange[3] = pdf.length - byteRange[2];
-        let actualByteRange = `/ByteRange [${byteRange.join(' ')}]`;
-        actualByteRange += ' '.repeat(byteRangeString.length - actualByteRange.length);
-
-        // Replace the /ByteRange placeholder with the actual ByteRange
-        pdf = Buffer.concat([
-            pdf.slice(0, byteRangePos),
-            Buffer.from(actualByteRange),
-            pdf.slice(byteRangeEnd),
-        ]);
-
-        // Remove the placeholder signature
-        pdf = Buffer.concat([
-            pdf.slice(0, byteRange[1]),
-            pdf.slice(byteRange[2], byteRange[2] + byteRange[3]),
-        ]);
+        let { pdf, placeholderLength, byteRange } = this.getSignablePdfBuffer(pdfBuffer);
 
         // Convert Buffer P12 to a forge implementation.
         const forgeCert = forge.util.createBuffer(p12Buffer.toString('binary'));
@@ -183,6 +192,55 @@ export class SignPdf {
 
         // Magic. Done.
         return pdf;
+    }
+
+    getSignablePdfBuffer(pdfBuffer) {
+        let pdf = removeTrailingNewLine(pdfBuffer);
+
+        // Find the ByteRange placeholder.
+        const byteRangePlaceholder = [
+            0,
+            `/${this.byteRangePlaceholder}`,
+            `/${this.byteRangePlaceholder}`,
+            `/${this.byteRangePlaceholder}`,
+        ];
+        const byteRangeString = `/ByteRange [${byteRangePlaceholder.join(' ')}]`;
+        const byteRangePos = pdf.indexOf(byteRangeString);
+        if (byteRangePos === -1) {
+            throw new SignPdfError(
+                `Could not find ByteRange placeholder: ${byteRangeString}`,
+                SignPdfError.TYPE_PARSE,
+            );
+        }
+
+        // Calculate the actual ByteRange that needs to replace the placeholder.
+        const byteRangeEnd = byteRangePos + byteRangeString.length;
+        const contentsTagPos = pdf.indexOf('/Contents ', byteRangeEnd);
+        const placeholderPos = pdf.indexOf('<', contentsTagPos);
+        const placeholderEnd = pdf.indexOf('>', placeholderPos);
+        const placeholderLengthWithBrackets = (placeholderEnd + 1) - placeholderPos;
+        const placeholderLength = placeholderLengthWithBrackets - 2;
+        const byteRange = [0, 0, 0, 0];
+        byteRange[1] = placeholderPos;
+        byteRange[2] = byteRange[1] + placeholderLengthWithBrackets;
+        byteRange[3] = pdf.length - byteRange[2];
+        let actualByteRange = `/ByteRange [${byteRange.join(' ')}]`;
+        actualByteRange += ' '.repeat(byteRangeString.length - actualByteRange.length);
+
+        // Replace the /ByteRange placeholder with the actual ByteRange
+        pdf = Buffer.concat([
+            pdf.slice(0, byteRangePos),
+            Buffer.from(actualByteRange),
+            pdf.slice(byteRangeEnd),
+        ]);
+
+        // Remove the placeholder signature
+        pdf = Buffer.concat([
+            pdf.slice(0, byteRange[1]),
+            pdf.slice(byteRange[2], byteRange[2] + byteRange[3]),
+        ]);
+
+        return { pdf, placeholderLength, byteRange };
     }
 }
 

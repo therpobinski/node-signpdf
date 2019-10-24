@@ -84,5 +84,8 @@
         "jest": "^24.5.0",
         "node-forge": "^0.7.6",
         "pdfkit": "^0.10.0"
+    },
+    "dependencies": {
+        "graphene-pk11": "^2.1.3"
     }
 }

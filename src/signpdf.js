@@ -99,7 +99,14 @@ export class SignPdf {
             bagType: forge.pki.oids.pkcs8ShroudedKeyBag,
         })[forge.pki.oids.pkcs8ShroudedKeyBag];
 
-        const privateKey = (keyBags[1] || keyBags[0]).key;
+        if (typeof keyBags === 'undefined' || keyBags.length < 1) {
+            throw new SignPdfError(
+                'Failed to find the pkcs8Bags.',
+                SignPdfError.TYPE_INPUT,
+            );
+        }
+      
+        const privateKey = keyBags[keyBags.length - 1].key;
         // Here comes the actual PKCS#7 signing.
         const p7 = forge.pkcs7.createSignedData();
         // Start off by setting the content.

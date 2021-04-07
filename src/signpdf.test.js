@@ -172,7 +172,7 @@ describe('Test signing', () => {
         pdfBuffer = plainAddPlaceholder({
           pdfBuffer, 
           reason: 'first',
-          signatureLength: p12Buffer.length
+          signatureLength: 1592,
         });
         pdfBuffer = signer.sign(pdfBuffer, p12Buffer, { passphrase: 'node-signpdf' });
         const secondP12Buffer = fs.readFileSync(`${__dirname}/../resources/withpass.p12`);
@@ -180,7 +180,7 @@ describe('Test signing', () => {
         signedPdfBuffer = plainAddPlaceholder({ 
           pdfBuffer: signedPdfBuffer, 
           reason: 'second',
-          signatureLength: secondP12Buffer.length
+          signatureLength: 1592,
         });
         signedPdfBuffer = signer.sign(signedPdfBuffer, secondP12Buffer, {
           passphrase: 'node-signpdf' });
@@ -200,7 +200,7 @@ describe('Test signing', () => {
         pdfBuffer = await pdflibAddPlaceholder({
           pdfBuffer, 
           infoSignature,
-          signatureLength: p12Buffer.length
+          signatureLength: 1592,
         })
         pdfBuffer = signer.sign(pdfBuffer, p12Buffer, { passphrase: 'node-signpdf' })
         expect(pdfBuffer instanceof Buffer).toBe(true)
@@ -214,7 +214,7 @@ describe('Test signing', () => {
         pdfBuffer = await pdflibAddPlaceholder({
           pdfBuffer, 
           infoSignature,
-          signatureLength: p12Buffer.length
+          signatureLength: 1592
         })
         pdfBuffer = signer.sign(pdfBuffer, p12Buffer, { passphrase: 'node-signpdf' })
         expect(pdfBuffer instanceof Buffer).toBe(true)

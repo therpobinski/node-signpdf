@@ -59,16 +59,18 @@ const pdfkitAddPlaceholder = ({
     const acroFormMatch = regex.exec(content);
     const [, signtureIndex, acroFormFields] = acroFormMatch;
     acroFormId = parseInt(signtureIndex);
-    fieldIds = acroFormFields.split(' ').filter((element, index) => index % 3 === 0).map(fieldId => new _pdfkitReferenceMock.default(fieldId));
+    fieldIds = acroFormFields.split(' ').filter(element => element !== '').filter((element, index) => index % 3 === 0).map(fieldId => new _pdfkitReferenceMock.default(fieldId));
   }
 
   const signatureName = 'Signature'; // Generate signature annotation widget
+  // [100, 257, 250, 229] with letter size 7, bottom = right + letterSize, top = right - (letterSize * 3)
 
   const widget = pdf.ref({
     Type: 'Annot',
     Subtype: 'Widget',
     FT: 'Sig',
     Rect: [0, 0, 0, 0],
+    // [left, bottom, right, top]  ** no negative **
     V: signature,
     T: new String(signatureName + (fieldIds.length + 1)),
     // eslint-disable-line no-new-wrappers
